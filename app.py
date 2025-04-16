@@ -138,7 +138,7 @@ if mode == "Image Upload":
                         top_indices = np.argsort(predictions[0])[-top_n:][::-1]
                         st.subheader("Top Predictions:")
                         for i in top_indices:
-                            st.progress(float(predictions[0][i]), 
+                            st.progress(float(predictions[0][i]))
                             st.caption(f"{class_labels.get(i, 'Unknown')}: {predictions[0][i]:.2%}")
                     else:
                         st.warning("The model is not confident about this prediction.")
@@ -149,17 +149,21 @@ else:  # Webcam mode
     st.subheader("Real-time ASL Recognition")
     st.warning("Webcam feature requires camera access permission.")
     
-    webrtc_ctx = webrtc_streamer(
-        key="asl-recognition",
-        mode=WebRtcMode.SENDRECV,
-        video_processor_factory=VideoProcessor,
-        media_stream_constraints={"video": True, "audio": False},
-        async_processing=True,
-    )
-    
-    if not webrtc_ctx.state.playing:
-        st.info("Waiting for webcam to start...")
-        st.image("https://via.placeholder.com/640x360?text=Webcam+Feed+Will+Appear+Here")
+    try:
+        webrtc_ctx = webrtc_streamer(
+            key="asl-recognition",
+            mode=WebRtcMode.SENDRECV,
+            video_processor_factory=VideoProcessor,
+            media_stream_constraints={"video": True, "audio": False},
+            async_processing=True,
+        )
+        
+        if not webrtc_ctx.state.playing:
+            st.info("Waiting for webcam to start...")
+            st.image("https://via.placeholder.com/640x360?text=Webcam+Feed+Will+Appear+Here")
+    except Exception as e:
+        st.error(f"Webcam error: {str(e)}")
+        st.info("Please try the image upload option instead")
 
 # Footer
 st.markdown("---")
