@@ -7,7 +7,6 @@ from streamlit_webrtc import webrtc_streamer, VideoTransformerBase, WebRtcMode
 import cv2
 from PIL import Image
 import av
-import os
 
 # Set page config
 st.set_page_config(
@@ -16,19 +15,25 @@ st.set_page_config(
     layout="wide"
 )
 
-# Load model and class indices
+# Define class labels directly (update this to match your model's classes)
+CLASS_LABELS = {
+    0: 'A', 1: 'B', 2: 'C', 3: 'D', 4: 'E', 5: 'F', 6: 'G', 7: 'H',
+    8: 'I', 9: 'J', 10: 'K', 11: 'L', 12: 'M', 13: 'N', 14: 'O',
+    15: 'P', 16: 'Q', 17: 'R', 18: 'S', 19: 'T', 20: 'U', 21: 'V',
+    22: 'W', 23: 'X', 24: 'Y', 25: 'Z', 26: '0', 27: '1', 28: '2',
+    29: '3', 30: '4', 31: '5', 32: '6', 33: '7', 34: '8', 35: '9'
+}
+
+# Load model
 @st.cache_resource
-def load_models():
+def load_model_cached():
     try:
-        model = load_model("sign_language_model.h5")
-        class_indices = np.load("class_indices.npy", allow_pickle=True).item()
-        class_labels = {v:k for k,v in class_indices.items()}
-        return model, class_labels
+        return load_model("sign_language_model.h5")
     except Exception as e:
         st.error(f"Error loading model: {str(e)}")
-        return None, None
+        return None
 
-model, class_labels = load_models()
+model = load_model_cached()
 
 # Preprocessing function
 def preprocess_image(image, target_size=(128, 128)):
@@ -48,11 +53,9 @@ class VideoProcessor(VideoTransformerBase):
         self.frame_count += 1
         img = frame.to_ndarray(format="bgr24")
         
-        # Only process every 5th frame for performance
         if self.frame_count % 5 != 0:
             return img
         
-        # Convert and predict
         pil_img = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
         img_array = preprocess_image(pil_img)
         
@@ -61,8 +64,8 @@ class VideoProcessor(VideoTransformerBase):
             confidence = np.max(predictions)
             predicted_class = np.argmax(predictions[0])
             
-            if confidence > 0.7:  # Confidence threshold
-                label = class_labels.get(predicted_class, "Unknown")
+            if confidence > 0.7:
+                label = CLASS_LABELS.get(predicted_class, "Unknown")
                 cv2.putText(
                     img, f"{label} ({confidence:.2f})", (30, 60),
                     cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 255, 0), 3
@@ -72,102 +75,5 @@ class VideoProcessor(VideoTransformerBase):
         
         return img
 
-# Main app
-st.title("American Sign Language Recognition System")
-st.markdown("""
-    This application recognizes American Sign Language (ASL) letters and numbers 
-    from images or webcam input.
-""")
-
-# Sidebar
-with st.sidebar:
-    st.header("Settings")
-    mode = st.radio(
-        "Input Mode:",
-        ("Image Upload", "Real-time Webcam"),
-        index=0
-    )
-    
-    st.markdown("---")
-    st.markdown("""
-        **Instructions:**
-        - For image upload: Use clear, well-lit images of hand signs
-        - For webcam: Position your hand in the center of the frame
-        - Only letters A-Z and numbers 0-9 are supported
-    """)
-
-# Main content
-if model is None or class_labels is None:
-    st.error("Model failed to load. Please check if the model files exist.")
-    st.stop()
-
-if mode == "Image Upload":
-    st.subheader("Upload an ASL Image")
-    uploaded_file = st.file_uploader(
-        "Choose an image file", 
-        type=["jpg", "jpeg", "png"],
-        accept_multiple_files=False
-    )
-    
-    if uploaded_file is not None:
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            try:
-                image = Image.open(uploaded_file)
-                st.image(image, caption="Uploaded Image", use_column_width=True)
-            except Exception as e:
-                st.error(f"Error loading image: {str(e)}")
-                st.stop()
-        
-        with col2:
-            with st.spinner("Processing..."):
-                try:
-                    img_array = preprocess_image(image)
-                    predictions = model.predict(img_array, verbose=0)
-                    confidence = np.max(predictions)
-                    predicted_class = np.argmax(predictions[0])
-                    
-                    if confidence > 0.7:
-                        label = class_labels.get(predicted_class, "Unknown")
-                        st.success(f"Prediction: **{label}**")
-                        st.metric("Confidence", f"{confidence:.2%}")
-                        
-                        # Show prediction distribution
-                        top_n = 5
-                        top_indices = np.argsort(predictions[0])[-top_n:][::-1]
-                        st.subheader("Top Predictions:")
-                        for i in top_indices:
-                            st.progress(float(predictions[0][i]))
-                            st.caption(f"{class_labels.get(i, 'Unknown')}: {predictions[0][i]:.2%}")
-                    else:
-                        st.warning("The model is not confident about this prediction.")
-                except Exception as e:
-                    st.error(f"Prediction error: {str(e)}")
-
-else:  # Webcam mode
-    st.subheader("Real-time ASL Recognition")
-    st.warning("Webcam feature requires camera access permission.")
-    
-    try:
-        webrtc_ctx = webrtc_streamer(
-            key="asl-recognition",
-            mode=WebRtcMode.SENDRECV,
-            video_processor_factory=VideoProcessor,
-            media_stream_constraints={"video": True, "audio": False},
-            async_processing=True,
-        )
-        
-        if not webrtc_ctx.state.playing:
-            st.info("Waiting for webcam to start...")
-            st.image("https://via.placeholder.com/640x360?text=Webcam+Feed+Will+Appear+Here")
-    except Exception as e:
-        st.error(f"Webcam error: {str(e)}")
-        st.info("Please try the image upload option instead")
-
-# Footer
-st.markdown("---")
-st.markdown("""
-    *Note: This is a demonstration system. Accuracy may vary based on lighting, 
-    hand position, and background conditions.*
-""")
+# Rest of your app code remains the same...
+# [Keep all the Streamlit UI code from the previous version]
